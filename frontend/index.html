@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Atlas · AI 学习助手 — 多智能体学习工作台</title>
+<!-- 本地 vendor 库：避免 CDN 拦截，加载稳定 -->
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/highlight.min.js"></script>
+<script src="/static/vendor/mermaid.min.js"></script>
+<link rel="stylesheet" href="vendor/github.min.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ===================== 左侧边栏 ===================== -->
+<aside class="sidebar" id="sidebar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="22" stroke="currentColor" stroke-width="2.5" opacity="0.35"/>
+        <path d="M24 8 L40 22 L24 40 L8 22 Z" fill="currentColor" opacity="0.9"/>
+        <circle cx="24" cy="22" r="4.5" fill="#0d1117"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <h1>Atlas</h1>
+      <span>AI 学习工作台</span>
+    </div>
+  </div>
+
+  <button class="btn-new" id="btn-new">
+    <span class="plus">+</span> 新建对话
+  </button>
+
+  <nav class="conv-wrap">
+    <div class="nav-label">对话记录</div>
+    <div class="conv-list" id="conv-list">
+      <div class="conv-empty">暂无对话</div>
+    </div>
+  </nav>
+
+  <div class="capabilities">
+    <div class="nav-label">多智能体能力</div>
+    <div class="cap-item"><span class="cap-dot" style="--c:#7c9cff"></span>学习路线规划</div>
+    <div class="cap-item"><span class="cap-dot" style="--c:#4ad2ac"></span>代码审查</div>
+    <div class="cap-item"><span class="cap-dot" style="--c:#ffb454"></span>联网搜索</div>
+    <div class="cap-item"><span class="cap-dot" style="--c:#c678dd"></span>图片理解</div>
+    <div class="cap-item"><span class="cap-dot" style="--c:#6ee7f7"></span>需求澄清</div>
+  </div>
+
+  <div class="sidebar-foot">多智能体 · 短期记忆 · 长期画像</div>
+</aside>
+
+<!-- ===================== 主聊天区 ===================== -->
+<main class="main">
+  <header class="topbar">
+    <div class="top-left">
+      <span class="status-led" id="status-led"></span>
+      <span id="status-text">Atlas 在线</span>
+    </div>
+    <div class="top-right" id="top-right">
+      <div class="session-meta" id="session-meta">当前：新对话</div>
+    </div>
+  </header>
+
+  <!-- 欢迎页 -->
+  <section class="welcome" id="welcome">
+    <div class="welcome-inner">
+      <div class="welcome-glyph">
+        <svg viewBox="0 0 80 80" fill="none">
+          <circle cx="40" cy="40" r="38" stroke="currentColor" stroke-width="2" opacity="0.25"/>
+          <path d="M40 14 L66 38 L40 66 L14 38 Z" fill="currentColor" opacity="0.85"/>
+          <circle cx="40" cy="38" r="7" fill="#0d1117"/>
+        </svg>
+      </div>
+      <h2>今天想探索什么？</h2>
+      <p class="welcome-sub">规划一条学习路线，审一段代码，搜一些资料，或者让它看懂一张图</p>
+      <div class="prompt-chips">
+        <button class="chip" data-p="我想系统学习 RAG 技术，帮我规划一条从零入门到实战的路线">📚 规划学习路线</button>
+        <button class="chip" data-p="帮我评审这段代码，指出问题并给出优化建议">🔍 审查代码</button>
+        <button class="chip" data-p="帮我搜索最新的 LangGraph 多智能体最佳实践">🌐 联网搜索</button>
+        <button class="chip" data-p="请分析这张图片的内容和要点">🖼️ 理解图片</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 消息区 -->
+  <section class="chat" id="chat" hidden>
+    <div class="chat-inner" id="chat-container"></div>
+  </section>
+
+  <!-- 输入区 -->
+  <footer class="composer-wrap">
+    <div class="composer" id="composer">
+      <div class="img-preview-row" id="img-preview-row" hidden>
+        <div class="img-chip" id="img-chip">
+          <img id="thumb-img" alt="待上传预览" />
+          <span id="image-name"></span>
+          <button class="img-remove" id="img-remove" title="移除图片">✕</button>
+        </div>
+      </div>
+      <div class="composer-row">
+        <button class="icon-btn" id="ws-btn" title="选择工作空间（导出目标文件夹）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </button>
+        <button class="icon-btn" id="attach-btn" title="上传图片">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.8"/><path d="M3 16 L9 11 L13 14 L17 10 L21 14"/></svg>
+        </button>
+        <textarea id="user-input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+        <button class="send-btn" id="send-btn" title="发送">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12 L20 4 L14 20 L11 12 L4 12 Z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="composer-hint">Atlas 会自主路由到合适的智能体 · 支持流式思考展示</div>
+  </footer>
+</main>
+
+<input type="file" id="file-input" accept="image/*" hidden />
+<div id="drag-overlay" class="drag-overlay" hidden>松开以上传图片</div>
+
+<!-- 工作空间设置弹窗 -->
+<div class="modal-mask" id="ws-modal" hidden>
+  <div class="ws-modal" role="dialog" aria-modal="true" aria-labelledby="ws-title">
+    <h3 id="ws-title">工作空间 · 导出目标文件夹</h3>
+    <p class="ws-desc">模型把"导出学习计划为 Word / Markdown"生成的文件保存到你选定的工作空间。</p>
+
+    <label class="ws-label" for="ws-preset">预置目录</label>
+    <select id="ws-preset">
+      <option value="">-- 请在下方选择或输入 --</option>
+    </select>
+
+    <label class="ws-label" for="ws-custom">自定义路径</label>
+    <input id="ws-custom" type="text" placeholder="例如 D:\我的笔记" spellcheck="false" />
+
+    <button class="ws-browse" id="ws-browse">📂 选择更多选项（打开资源管理器）</button>
+
+    <div class="ws-current">当前工作空间：<span id="ws-current-path">加载中...</span></div>
+
+    <div class="ws-actions">
+      <button class="ws-btn-ghost" id="ws-cancel">取消</button>
+      <button class="ws-btn-primary" id="ws-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

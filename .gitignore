@@ -1,0 +1,56 @@
+# ===== API 密钥与环境配置 =====
+.env
+.env.*
+!.env.example
+
+# ===== Python 虚拟环境 =====
+.venv/
+venv/
+env/
+
+# ===== Python 编译缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ===== 数据库文件（含对话历史、记忆、检查点） =====
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/workspace.json
+data/uploads/
+data/exports/
+
+# ===== 输出文件 =====
+output/
+*.log
+
+# ===== IDE 及编辑器配置 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== 操作系统文件 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 临时测试文件（仅根目录） =====
+/_test*.py
+/_test*.js
+/test*.py
+/ceshi.py
+/_inspect*.py
+*.png
+*.jpg
+*.jpeg
+*.gif
