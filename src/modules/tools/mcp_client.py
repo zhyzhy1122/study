@@ -52,25 +52,21 @@ def build_mcp_connections(tavily_api_key: str) -> Dict[str, dict]:
         以后要加新 server，在这个函数里加一项就行
     """
     connections: Dict[str, dict] = {}
+    # 用字典收集要启动的 MCP server
+    # 没配置 Key 的服务直接跳过，不会启动失败
 
-    # --- 1. Tavily 搜索 MCP Server ---
-    # Tavily 官方 MCP server，通过 npx 启动
-    connections["tavily"] = {
-        "command": "npx",
-        # 命令：用 npx 运行 npm 包
-        "args": ["-y", "tavily-mcp"],
-        # 参数：
-        #   -y：自动确认安装（不用交互）
-        #   包名：tavily-mcp（Tavily 官方 MCP server）
-        #   注意：包名是 tavily-mcp，不是 @modelcontextprotocol/server-tavily
-        "transport": "stdio",
-        # 传输方式：stdio（标准输入输出，本地子进程）
-        "env": {
-            "TAVILY_API_KEY": tavily_api_key,
-        },
-        # 环境变量：把 Tavily API Key 传给子进程
-        # MCP server 从环境变量里读 key
-    }
+    # --- 1. Tavily 搜索 MCP Server（可选，有 Key 才启动）---
+    if tavily_api_key:
+        # 只有 Tavily API Key 非空时才加入
+        # 没配置 Key → 跳过 → 搜索功能不可用，但程序不会崩
+        connections["tavily"] = {
+            "command": "npx",
+            "args": ["-y", "tavily-mcp"],
+            "transport": "stdio",
+            "env": {
+                "TAVILY_API_KEY": tavily_api_key,
+            },
+        }
 
     # --- 2. Playwright 浏览器自动化 MCP Server ---
     # Playwright 官方 MCP server，让 Agent 能操作浏览器

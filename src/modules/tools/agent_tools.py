@@ -35,6 +35,10 @@ from src.agents.base import get_agent
 
 from src.modules.multimodal import MultimodalAgent
 
+from src.config import settings
+# 全局配置：用来判断哪些可选功能可用（Tavily / DashScope）
+# 没配置对应 Key 的功能，不注册对应工具，总控自然不会调用
+
 # ========== 每个子 Agent 的输入 schema ==========
 # 为什么要单独定义 schema：
 #   工具调用时，模型要知道"这个工具需要什么参数、每个参数是什么意思"
@@ -338,21 +342,33 @@ def build_multimodal_tool() -> BaseTool:
 
 def build_all_agent_tools() -> List[StructuredTool]:
     """
-    构建所有子 Agent 工具（一次性全部拿出来）
+    构建所有可用的子 Agent 工具（按配置条件注册）
 
     返回:
-        3 个子 Agent 工具的列表：
-        [learning_path_tool, code_review_tool, search_tool]
+        可用子 Agent 工具的列表。
+        哪些工具会出现，取决于 .env 里配置了哪些服务：
+        - learning_path_expert：总是可用（只依赖 DeepSeek）
+        - code_review_expert：总是可用（只依赖 DeepSeek）
+        - search_expert：有 TAVILY_API_KEY 才可用
+        - multimodal_expert：有 DASHSCOPE_API_KEY 才可用
 
-    给谁用:
-        注册中心（ToolRegistry）—— 调这个函数拿全部子 Agent 工具，再注册到 "sub_agents" 组
+    设计思路：
+        没配置 Key 的功能，干脆不注册工具。
+        这样总控 Agent 看不到这个工具，自然不会去调用它，
+        也就不会出现"调用了才报错"的糟糕体验。
     """
-    return [
+    tools = [
         build_learning_path_tool(),
         build_code_review_tool(),
-        build_search_tool(),
-        build_multimodal_tool()
-        # 澄清工具暂不挂载：当前 API 没有 thread_id/恢复机制，
-        # interrupt 在无 checkpointer 的链路上会失败并导致空回答。
-        # 等 Human-in-the-loop 恢复流程接通后再加回 build_clarify_tool()。
+        # 学习路线规划和代码审查只需要 DeepSeek，始终可用
     ]
+
+    # 搜索专家：有 Tavily Key 才注册
+    if settings.tavily_api_key:
+        tools.append(build_search_tool())
+
+    # 多模态专家：有 DashScope Key 才注册
+    if settings.dashscope_api_key:
+        tools.append(build_multimodal_tool())
+
+    return tools
