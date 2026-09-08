@@ -147,7 +147,13 @@ python run_api.py
 后端启动后访问 `http://localhost:8000/docs` 查看 API 文档。
 
 ### 5. 打开前端
-直接用浏览器打开 `frontend/index.html` 即可。
+后端启动后，前端已经通过 FastAPI 的静态文件服务挂载好了，浏览器访问：
+
+```
+http://localhost:8000/static/index.html
+```
+
+> **注意**：不要直接双击 `frontend/index.html` 打开——那样是 `file://` 协议，前端用的是相对路径 `/api/...`，会因为跨域（CORS）导致接口请求和 SSE 流式推送全部失败。必须通过后端同源访问。
 
 ---
 
