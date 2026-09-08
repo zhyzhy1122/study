@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     # 温度控制输出的随机性：0=最确定、1=最随机
     # 代码审查建议 0.3 左右（更严谨），创意生成建议 0.7-1.0
 
+    deepseek_max_tokens: int = 8192
+    # deepseek_max_tokens：单次回答最大输出 token 数
+    # 默认 8192，约合中文 6000 字左右
+    # 学习路线、长文回答等场景建议设大一点，防止中途截断
+    # 注意：设太大可能导致单次调用费用更高、响应更慢
+
     # --- 通义千问多模态模型配置 ---
     dashscope_api_key: str = ""
     # dashscope_api_key：阿里云 DashScope 的 API 密钥
