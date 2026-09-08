@@ -106,6 +106,15 @@ async def get_messages_connection():
         except Exception:
             pass  # 列已存在，忽略
 
+        # 迁移：旧表有 NOT NULL 的 user_id 列（旧版按用户隔离用的），
+        # 新代码 INSERT 不再写 user_id，会导致所有写入静默失败（NOT NULL 约束），
+        # 且 CREATE TABLE IF NOT EXISTS 不会更新已存在的旧表 —— 必须显式删列
+        try:
+            await db.execute("DROP INDEX IF EXISTS idx_messages_user")
+            await db.execute("ALTER TABLE messages DROP COLUMN user_id")
+        except Exception:
+            pass  # 列不存在（新库），忽略
+
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id)"
         )

@@ -52,11 +52,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 FRONTEND_DIR = BASE_DIR / "frontend"
 # 前端静态文件目录：项目根/frontend
-# P2 做前端时会把 HTML/CSS/JS 放这里
+
 
 UPLOAD_DIR = BASE_DIR / "data" / "uploads"
 # 上传文件目录：data/uploads
-# P4 做图片上传时会用到，先在这定义好
+# P4 做图片上传时会用到，
 
 # ========== 确保目录存在 ==========
 

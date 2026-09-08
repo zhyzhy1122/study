@@ -18,7 +18,6 @@ src/agents/supervisor.py
                 └── 汇总：把结果整理给用户
 
 为什么用 create_agent 做总控：
-  - 符合你"用 create_agent 做"的明确要求
   - 总控本身就是一个带工具的 Agent，能自主决策、灵活调度
   - 工具统一从 ToolRegistry 拿，扩展性强
   - 子 Agent 内部仍然独立完整（有中间件、有反思评估），只是对总控接口是工具形态
