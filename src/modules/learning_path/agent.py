@@ -29,7 +29,7 @@ from src.modules.tools import get_tool_registry, init_mcp_tools
 # init_mcp_tools：异步初始化 MCP 工具（连接 Tavily server → 工具注册进中心）
 
 # ========== 工具组声明 ==========
-LEARNING_PATH_TOOL_GROUPS = ["mcp_tavily"]
+LEARNING_PATH_TOOL_GROUPS = ["mcp_search"]
 # learning_path Agent 能调的 MCP 工具组
 # 挂 mcp_tavily：让路线规划能联网搜索真实课程/文档资源
 # 为什么按"组名"取：和 SearchAgent 一致从注册中心取，Agent 不关心工具细节
