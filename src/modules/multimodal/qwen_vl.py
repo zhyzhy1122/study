@@ -32,6 +32,16 @@ from typing import Optional
 from src.config import settings
 # 全局配置（dashscope_api_key）
 
+import os
+# DashScope 是阿里云国内服务，走系统代理（Clash 等）常导致 SSL 连接被中断
+# （症状：SSLError UNEXPECTED_EOF_WHILE_READING，直连正常、走代理必挂）。
+# 这里强制 dashscope 域名绕过代理直连，保证多模态链路不受本机代理软件影响。
+_no_proxy = os.environ.get("NO_PROXY", "")
+if "dashscope.aliyuncs.com" not in _no_proxy:
+    _merged = f"{_no_proxy},dashscope.aliyuncs.com".lstrip(",")
+    os.environ["NO_PROXY"] = _merged
+    os.environ["no_proxy"] = _merged
+
 # ========== 常量 ==========
 
 QWEN_VL_MODEL = "qwen-vl-max"
