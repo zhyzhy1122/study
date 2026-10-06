@@ -6,7 +6,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
-![Tests](https://img.shields.io/badge/tests-170%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-176%20passed-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ed)
 
 ---
@@ -310,7 +310,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
 
-当前：**170 passed**。整套测试**完全离线**——`tests/test_no_network.py` 用 socket 守卫
+当前：**176 passed**。整套测试**完全离线**——`tests/test_no_network.py` 用 socket 守卫
 确保任何用例都不会真的发出网络请求（LLM 调用一律替换成可编程替身）。
 
 | 文件 | 覆盖内容 |
@@ -318,7 +318,7 @@ python -m pytest tests -q
 | `test_middleware.py` | 中间件链：四个钩子的执行顺序、上下文合并、异常隔离；日志中间件；反思评估的 LLM-as-Judge 解析、打回重跑与失败兜底；记忆中间件的读/写/去重/命名空间隔离 |
 | `test_memory.py` | 记忆存储：建表 schema、upsert 与时间戳、命名空间隔离、删除语义；消息表的分页/顺序/会话隔离，以及旧表 `user_id` 列的迁移清理 |
 | `test_agents.py` | `PlanStep`/`ExecutionPlan` 校验、`BaseAgent` 默认行为与 `arun` 线程回退、子 Agent 懒加载缓存、工具契约、Supervisor 装配（含 checkpointer 不被缓存）与答案抽取 |
-| `test_supervisor_stream.py` | 流式输出：token → `done` 的事件序列、工具事件转前端卡片、跨 chunk 的 JSON 吞掉逻辑、空 chunk 跳过 |
+| `test_supervisor_stream.py` | 流式输出：token → `done` 的事件序列、工具事件转前端卡片、空 chunk 跳过；以及内部 JSON 过滤器的 9 种到达形态（整块 / 跨 chunk / 与正文同 chunk / 连续两块 / 字符串含花括号 / 非 dict 花括号 / 未闭合 / 超长 / 结束残留） |
 | `test_api.py` | FastAPI：路由注册、健康检查、CORS 与预检、静态挂载、lifespan 启停、workspace 读写校验、导出 Markdown/docx、chat 请求体校验 |
 | `test_tools_registry.py` | 工具注册中心：分组注册、副本隔离、单例语义、`init_tools` 幂等与可选 Key 降级 |
 | `test_rewriter.py` | 输入重写：短句阈值、提示词构造、LLM 异常/空返回/超长输出的兜底 |
@@ -332,7 +332,7 @@ python -m pytest tests -q
 - [ ] PDF 格式导出（当前仅 Word + Markdown）
 - [x] Docker 部署（Dockerfile + docker-compose.yml + .dockerignore，含 HEALTHCHECK）
 - [x] 离线单元测试 170 个（pytest，零网络依赖）
-- [ ] 修复 `docs/CODE_REVIEW.md` 中记录的流式 JSON 过滤截断问题（优先级最高）
+- [x] 修复流式输出吞掉正文的缺陷（改为花括号深度配对扫描，新增 6 个回归用例）
 - [ ] 学习进度追踪 / 打卡
 - [ ] 路线动态调整（根据学习反馈）
 - [ ] 知识图谱可视化（Graphviz）
@@ -341,9 +341,9 @@ python -m pytest tests -q
 
 ## 设计取舍与已知限制
 
-1. **流式输出存在一个已定位的缺陷**：内部 JSON 与正文落在同一帧时会被误吞，
-   导致回答截断。已写进 [`docs/CODE_REVIEW.md`](./docs/CODE_REVIEW.md)（P0，附修复方向与回归用例），
-   是下一步优先修复项。
+1. **流式输出的内部 JSON 过滤器**：原先用 `endswith("}")` 判闭合，会让正文被永久吞掉
+   （回答"说一半没了"）。**已修复**——改为花括号深度配对扫描，配 6 个新回归用例；
+   完整的问题分析、修复方式与遗留项见 [`docs/CODE_REVIEW.md`](./docs/CODE_REVIEW.md)。
 2. **容器内 MCP 不可用**：镜像基于 `python:3.11-slim`，没有 Node.js，`npx` 拉起的
    Tavily 搜索与 Playwright 抓取会预加载失败（已优雅降级，不影响其他功能）。
    要启用需在镜像里加 Node，或走本地部署。

@@ -29,6 +29,9 @@ src/agents/supervisor.py
 
 # ========== 导入部分 ==========
 
+import json
+# json：解析被判定为"内部 JSON"的文本块，确认它确实是合法 JSON 对象才丢弃
+
 from typing import Optional
 # Optional：可选类型（thread_id 等可空字段）
 
@@ -335,48 +338,107 @@ async def astream_supervisor(user_input: str, thread_id: Optional[str] = None):
     # ---- 内部 JSON 吞噬过滤器状态 ----
     # 作用：总控主模型会把"记忆更新 / 反思评分"等内部中间件产生的 JSON 一并复述到
     # 最终回答里（例如 {"should_update": true, ...}、{"scores": [...]}）。这些是给
-    # 系统内部用的，绝不能推给前端。这里识别"以 { 开头、整体构成一个完整合法 JSON 对象"
-    # 的文本块，然后整块丢弃；其余正常文本照常推送。
+    # 系统内部用的，绝不能推给前端。
+    #
+    # 实现要点（踩过的坑）：
+    #   不能用"整段是否以 } 结尾"（endswith）来判断 JSON 是否闭合。流式分片边界由
+    #   tokenizer 决定，内部 JSON 的闭括号很可能和紧随其后的正文挤在同一个 chunk 里
+    #   （'{"a": 1}好的'）。旧实现遇到这种输入既无法闭合、也解析不了，缓冲区被永久
+    #   扣住，后面所有正文再也推不出去——用户看到的就是"回答说一半没了"。
+    #   现在改为按**花括号深度配对**扫描对象边界：找到完整对象就丢弃它，并把其后的
+    #   剩余文本按普通文本继续处理（而不是留在缓冲里等一个永远不会出现的 }）。
     _json_buf = ""       # 正在累积、疑似 JSON 的文本
     _in_json = False     # 是否已进入"疑似 JSON"状态
-    _JSON_MAX = 100000   # 保留上限：累积超过此长度仍未识别为 JSON，则放弃并当作普通文本
+    _JSON_MAX = 2048     # 缓冲上限：未闭合时超过此长度即放弃吞噬，按普通文本放行
+
+    def _find_json_object_end(s: str):
+        """若 s 以（忽略前导空白后）一个花括号配平的 JSON 对象开始，返回该对象的结束下标；否则 None。
+
+        用深度配对而非 endswith("}")，并跳过字符串字面量内部的花括号，
+        使 '{"a": "}"}' 这类含引号内花括号的内容也能正确判界。
+        """
+        i = 0
+        n = len(s)
+        while i < n and s[i].isspace():
+            i += 1
+        if i >= n or s[i] != "{":
+            return None
+        depth = 0
+        in_str = False
+        escaped = False
+        for j in range(i, n):
+            ch = s[j]
+            if in_str:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return j + 1
+        return None
 
     def _strip_internal_json(text: str) -> str:
         """剥离内部 JSON 块，返回应当推送的文本（内部 JSON 返回空串）。"""
         nonlocal _json_buf, _in_json
 
-        if _in_json:
-            # 已在"疑似 JSON"状态：继续累积，等它闭合
-            _json_buf += text
-            if len(_json_buf) > _JSON_MAX:
-                # 太长还闭合不了 → 说明不是 JSON，当作普通文本放行一次
-                _in_json = False
-                buf = _json_buf
-                _json_buf = ""
-                return buf
-            s = _json_buf.lstrip()
-            if s.startswith("{") and s.endswith("}"):
-                import json as _json
-                try:
-                    obj = _json.loads(s)
-                except Exception:
-                    obj = None
-                if isinstance(obj, dict):
-                    # 完整合法的 JSON 对象 → 内部输出，整体丢弃
-                    _in_json = False
-                    _json_buf = ""
-                    return ""
-            # 要么还没闭合，要么解析出来的不是对象 → 继续等，暂不输出
-            return ""
-
-        # 未在"疑似 JSON"状态：判断本次文本是否以 "{" 开头
-        if text.lstrip().startswith("{"):
-            # 可能是内部 JSON 的开始，进入吞噬模式
-            _in_json = True
+        if not _in_json:
+            # 快速路径：本期文本不以 { 开头就不可能是内部 JSON，直接放行、不进缓冲
+            if not text.lstrip().startswith("{"):
+                return text
             _json_buf = text
-            return ""
-        # 普通文本，直接推送
-        return text
+            _in_json = True
+        else:
+            _json_buf += text
+
+        while True:
+            s = _json_buf.lstrip()
+            if not s.startswith("{"):
+                # 缓冲里已经没有对象开头（例如上一步剥离后剩下的正文）
+                out = _json_buf
+                _json_buf = ""
+                _in_json = False
+                return out
+
+            end = _find_json_object_end(s)
+            if end is None:
+                # 尚未闭合：超过上限就放弃吞噬，把已收内容当普通文本吐出，
+                # 避免正文被永久扣在缓冲区里
+                if len(_json_buf) > _JSON_MAX:
+                    out = _json_buf
+                    _json_buf = ""
+                    _in_json = False
+                    return out
+                return ""
+
+            try:
+                obj = json.loads(s[:end])
+            except Exception:
+                obj = None
+
+            if not isinstance(obj, dict):
+                # 形似 JSON 但解析不出对象 → 不是内部数据，整段按普通文本放行
+                out = _json_buf
+                _json_buf = ""
+                _in_json = False
+                return out
+
+            # 确认是内部 JSON 对象 → 丢弃它，其后的剩余部分继续处理
+            # （可能是正文，也可能是紧接着的另一个内部 JSON）
+            rest = s[end:]
+            _json_buf = rest
+            if not rest.strip():
+                _json_buf = ""
+                _in_json = False
+                return ""
 
     async for event in agent.astream_events(
         {"messages": messages},
@@ -461,5 +523,10 @@ async def astream_supervisor(user_input: str, thread_id: Optional[str] = None):
 
         if event_type == "on_chat_model_end":
             continue
+
+    # 流结束时缓冲区可能仍有残留（生成被截断、内部 JSON 未闭合）。
+    # 宁可露出半截内容，也不能把用户本该看到的正文永久扣在缓冲里。
+    if _json_buf:
+        yield {"type": "token", "content": _json_buf}
 
     yield {"type": "done"}

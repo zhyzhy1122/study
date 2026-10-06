@@ -7,8 +7,9 @@ tests/test_supervisor_stream.py
   1. 把 on_tool_start / on_tool_end 翻译成前端能显示的工具卡片
   2. 把 on_chain_start 翻译成"正在规划学习路线…"这类思考提示
   3. 把模型输出里的"内部 JSON"（记忆更新 / 反思评分）整块吞掉，绝不外泄给前端
-第 3 条最容易被改坏，所以这里用假事件流覆盖三种到达形态：
-整块 JSON、跨 chunk 的 JSON、以及"闭括号与正文挤在同一个 chunk"的缺陷现状。
+第 3 条最容易被改坏，所以这里用假事件流覆盖多种到达形态：
+整块 JSON、跨 chunk 的 JSON、闭括号与正文挤在同一个 chunk（曾经的截断缺陷）、
+未闭合的缓冲、超长缓冲、以及字符串里含花括号的 JSON。
 """
 
 from __future__ import annotations
@@ -137,20 +138,89 @@ def test_stream_swallows_json_split_across_chunks(monkeypatch):
     assert tokens == ["正文", "收尾"]
 
 
-def test_stream_json_buffer_keeps_swallowing_text_after_closing_brace(monkeypatch):
+def test_stream_releases_text_after_json_in_same_chunk(monkeypatch):
     """
-    已知缺陷（当前行为，非期望行为）：吞噬器只在"缓冲内容恰好以 } 结尾"时才判定闭合。
-    如果内部 JSON 的闭括号与紧随其后的正文挤在同一个 chunk 里，
-    缓冲区会变成 '{"a": 1}结束。'，既不闭合也无法解析 → 后续正文被一直扣在缓冲里，
-    最终不会推给前端（表现为回答"说一半没了"）。
-    这里锁定现状，避免以后无意改坏；真正修复需要改成"按大括号配对"扫描。
+    回归：内部 JSON 的闭括号与紧随其后的正文挤在同一个 chunk 时，正文必须照常输出。
+
+    旧实现用 `endswith("}")` 判断闭合，遇到 '{"a": 1}结束。' 会既不闭合也解析不了，
+    把后续正文永久扣在缓冲区里（用户可见的"回答说一半没了"）。
+    现在按花括号深度配对扫描，丢弃 JSON 后把剩余正文放行。
     """
     events = [chunk("开头"), chunk('{"should_update": true}结束。')]
 
     out = collect(monkeypatch, events)
 
     tokens = [e["content"] for e in out if e["type"] == "token"]
-    assert tokens == ["开头"]  # "结束。" 被吞掉（缺陷现状）
+    assert tokens == ["开头", "结束。"]
+    assert all("should_update" not in t for t in tokens)
+
+
+def test_stream_keeps_streaming_after_inline_json(monkeypatch):
+    """JSON 与正文同 chunk 之后，后续 chunk 也必须继续输出（旧实现会全部吞掉）。"""
+    events = [
+        chunk("第一段。"),
+        chunk('{"should_update": true}第二段'),
+        chunk("，第三段。"),
+    ]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e["content"] for e in out if e["type"] == "token"]
+    assert "".join(tokens) == "第一段。第二段，第三段。"
+
+
+def test_stream_handles_consecutive_internal_json_blocks(monkeypatch):
+    """连续两个内部 JSON 都应被丢弃，其后正文照常输出。"""
+    events = [
+        chunk('{"should_update": true}{"scores": [{"dimension": "Accuracy", "score": 5}]}'),
+        chunk("正文开始"),
+    ]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e["content"] for e in out if e["type"] == "token"]
+    assert tokens == ["正文开始"]
+
+
+def test_stream_handles_brace_inside_json_string(monkeypatch):
+    """字符串字面量里的花括号不能干扰深度配对。"""
+    events = [chunk('{"note": "包含 } 和 { 的字符串"}后续正文')]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e["content"] for e in out if e["type"] == "token"]
+    assert tokens == ["后续正文"]
+
+
+def test_stream_releases_non_dict_brace_text(monkeypatch):
+    """以 { 开头但不是合法 JSON 对象的文本，不能被无限扣住。"""
+    events = [chunk("{1, 2} 是集合字面量，不是内部 JSON。")]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e["content"] for e in out if e["type"] == "token"]
+    assert tokens == ["{1, 2} 是集合字面量，不是内部 JSON。"]
+
+
+def test_stream_flushes_unclosed_buffer_at_end(monkeypatch):
+    """流结束时缓冲区仍有残留（生成被截断）必须放行，不能静默丢弃正文。"""
+    events = [chunk("正文"), chunk('{"应该闭合但被截断" : ')]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e["content"] for e in out if e["type"] == "token"]
+    assert "正文" in "".join(tokens)
+    assert "".join(tokens).endswith(": ")
+
+
+def test_stream_releases_oversized_buffer(monkeypatch):
+    """未闭合缓冲超过上限时放弃吞噬，按普通文本放行。"""
+    events = [chunk("{" + "x" * 3000)]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e["content"] for e in out if e["type"] == "token"]
+    assert len("".join(tokens)) == 3001
 
 
 def test_stream_keeps_plain_braces_text(monkeypatch):
