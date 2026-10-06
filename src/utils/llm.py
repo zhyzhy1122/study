@@ -14,7 +14,6 @@ src/utils/llm.py
 from langchain_openai import ChatOpenAI
 # 从 langchain_openai 导入 ChatOpenAI 类
 # 作用：LangChain 提供的 OpenAI 格式对话模型封装
-# 为什么用它？因为 DeepSeek、通义千问等国内模型都兼容 OpenAI 的 API 格式
 # 所以我们可以用同一个类，只改 api_key / base_url / model 就能切换不同模型
 # 这样统一接口，业务代码不用关心底层是哪家的模型
 

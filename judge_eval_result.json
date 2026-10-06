@@ -1,0 +1,56 @@
+{
+  "solved": 6,
+  "total": 6,
+  "solve_rate": 100.0,
+  "avg_score": 24.2,
+  "details": [
+    {
+      "scene": "代码审查",
+      "question": "帮我审查这段 Python 代码：\nfor i in range(len(lst)):\n    print(lst[i])\n指出问题并给出改进写法。",
+      "score": 25,
+      "solved": true,
+      "latency_s": 19.6,
+      "reason": "回答准确指出range(len(lst))的C风格写法问题，给出直接迭代和enumerate的改进写法，并补充命名与封装建议，针对性强且可直接使用。"
+    },
+    {
+      "scene": "代码审查",
+      "question": "审查这个函数有什么问题：\ndef add(a, b):\n    return a + b\n从类型安全、异常处理、文档字符串三个角度分析。",
+      "score": 24,
+      "solved": true,
+      "latency_s": 46.7,
+      "reason": "三个角度均被准确覆盖，技术点（str/list/bool 静默相加、bool 是 int 子类、不应盲目 try/except）无误，只是优化版代码仅停留在“要不要我贴出来”未直接给出，可操作性略打折。"
+    },
+    {
+      "scene": "代码审查",
+      "question": "这段代码有性能问题吗？\ns = \"\"\nfor x in big_list:\n    s += str(x)\n如果有，给出更好的写法并解释原因。",
+      "score": 25,
+      "solved": true,
+      "latency_s": 57.0,
+      "reason": "准确指出 += 的 O(n²) 本质、CPython 就地扩容优化的存在条件与失效场景，并给出 join/StringIO 等可直接替换的写法与取舍标准，无编造。"
+    },
+    {
+      "scene": "知识问答",
+      "question": "不用联网搜索，凭你已有的知识回答：什么是 RAG？为什么企业客服系统普遍用它？",
+      "score": 24,
+      "solved": true,
+      "latency_s": 2.7,
+      "reason": "准确解释了RAG的定义与流程，并从幻觉、更新、成本、安全、可审计等角度完整说明企业客服采用原因，结构清晰、无编造，仅缺具体落地步骤。"
+    },
+    {
+      "scene": "知识问答",
+      "question": "不用联网搜索，用通俗的语言解释 FastAPI 的依赖注入是什么，并举一个例子。",
+      "score": 25,
+      "solved": true,
+      "latency_s": 4.5,
+      "reason": "用餐厅备料的通俗类比准确解释了依赖注入，并给出可直接运行的 Depends/Header/yield 示例，覆盖了概念、好处、用法与测试替换，无事实错误。"
+    },
+    {
+      "scene": "寒暄",
+      "question": "你好，你能帮我做什么？",
+      "score": 22,
+      "solved": true,
+      "latency_s": 1.0,
+      "reason": "回答直接、清晰地介绍了自身能力并引导用户提出需求，相关性和格式良好；能力列举较笼统且未穷尽，准确性与可操作性略可提升，但整体已正确解决用户问题。"
+    }
+  ]
+}

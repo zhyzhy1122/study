@@ -54,3 +54,18 @@ desktop.ini
 *.jpg
 *.jpeg
 *.gif
+
+# 上面按扩展名拦截图片，这里放行文档/截图目录（README 配图用）
+!docs/
+!docs/**/*.png
+!docs/**/*.jpg
+
+# ===== 测试缓存 =====
+.pytest_cache/
+
+# ===== AI 编码助手产生的本地元数据（与项目无关） =====
+.playwright-mcp/
+.rivet/
+.workbuddy/
+.junie/
+.codebuddy/

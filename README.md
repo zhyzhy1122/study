@@ -6,6 +6,8 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
+![Tests](https://img.shields.io/badge/tests-170%20passed-brightgreen)
+![Docker](https://img.shields.io/badge/Docker-compose-2496ed)
 
 ---
 
@@ -99,6 +101,34 @@
 ---
 
 ## 快速开始
+
+### 方式一：Docker 一键启动（推荐）
+
+```bash
+git clone https://github.com/zhyzhy1122/study.git
+cd study
+
+# 1. 准备环境变量（含 API Key，已被 .gitignore 排除）
+cp .env.example .env
+# 编辑 .env，至少填入 DEEPSEEK_API_KEY
+
+# 2. 一键启动
+docker compose up -d --build
+
+# 3. 打开前端
+#    http://localhost:8100/static/index.html
+```
+
+镜像内置 `HEALTHCHECK`；`data/` 目录以数据卷挂载，删容器不丢会话与记忆。
+> ⚠️ 容器内**没有 Node.js**，因此依赖 `npx` 的 MCP 工具（Tavily 搜索、Playwright 抓取）会预加载失败。
+> 主服务会正常降级运行（启动日志会提示"主服务继续运行"），其余功能不受影响。
+> 需要容器内联网搜索时，请在 Dockerfile 里补装 Node.js，或直接在宿主机用「方式二」跑。
+**容器对外端口默认 8100**（`${APP_PORT:-8100}`）：因为本机 8000 常被其他服务占用，
+compose 会报 `port is already allocated`。想改回 8000 就 `APP_PORT=8000 docker compose up -d`。
+
+---
+
+### 方式二：本地开发（以下 1~5 步）
 
 ### 环境要求
 - Python 3.10+
@@ -273,13 +303,61 @@ http://localhost:8000/static/index.html
 
 ---
 
+## 测试
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests -q
+```
+
+当前：**170 passed**。整套测试**完全离线**——`tests/test_no_network.py` 用 socket 守卫
+确保任何用例都不会真的发出网络请求（LLM 调用一律替换成可编程替身）。
+
+| 文件 | 覆盖内容 |
+|---|---|
+| `test_middleware.py` | 中间件链：四个钩子的执行顺序、上下文合并、异常隔离；日志中间件；反思评估的 LLM-as-Judge 解析、打回重跑与失败兜底；记忆中间件的读/写/去重/命名空间隔离 |
+| `test_memory.py` | 记忆存储：建表 schema、upsert 与时间戳、命名空间隔离、删除语义；消息表的分页/顺序/会话隔离，以及旧表 `user_id` 列的迁移清理 |
+| `test_agents.py` | `PlanStep`/`ExecutionPlan` 校验、`BaseAgent` 默认行为与 `arun` 线程回退、子 Agent 懒加载缓存、工具契约、Supervisor 装配（含 checkpointer 不被缓存）与答案抽取 |
+| `test_supervisor_stream.py` | 流式输出：token → `done` 的事件序列、工具事件转前端卡片、跨 chunk 的 JSON 吞掉逻辑、空 chunk 跳过 |
+| `test_api.py` | FastAPI：路由注册、健康检查、CORS 与预检、静态挂载、lifespan 启停、workspace 读写校验、导出 Markdown/docx、chat 请求体校验 |
+| `test_tools_registry.py` | 工具注册中心：分组注册、副本隔离、单例语义、`init_tools` 幂等与可选 Key 降级 |
+| `test_rewriter.py` | 输入重写：短句阈值、提示词构造、LLM 异常/空返回/超长输出的兜底 |
+| `test_schema.py` | Pydantic 模型：五维评分范围、总分区间、`should_pass` 规则覆盖、澄清选项模型 |
+| `test_no_network.py` | 全局守卫：中间件/重写器/SQLite 层可在无 socket 环境运行，并验证守卫本身有效 |
+
+---
+
 ## 已知限制与后续规划
 
 - [ ] PDF 格式导出（当前仅 Word + Markdown）
-- [ ] Docker 部署
+- [x] Docker 部署（Dockerfile + docker-compose.yml + .dockerignore，含 HEALTHCHECK）
+- [x] 离线单元测试 170 个（pytest，零网络依赖）
+- [ ] 修复 `docs/CODE_REVIEW.md` 中记录的流式 JSON 过滤截断问题（优先级最高）
 - [ ] 学习进度追踪 / 打卡
 - [ ] 路线动态调整（根据学习反馈）
 - [ ] 知识图谱可视化（Graphviz）
+
+---
+
+## 设计取舍与已知限制
+
+1. **流式输出存在一个已定位的缺陷**：内部 JSON 与正文落在同一帧时会被误吞，
+   导致回答截断。已写进 [`docs/CODE_REVIEW.md`](./docs/CODE_REVIEW.md)（P0，附修复方向与回归用例），
+   是下一步优先修复项。
+2. **容器内 MCP 不可用**：镜像基于 `python:3.11-slim`，没有 Node.js，`npx` 拉起的
+   Tavily 搜索与 Playwright 抓取会预加载失败（已优雅降级，不影响其他功能）。
+   要启用需在镜像里加 Node，或走本地部署。
+3. **CORS 全开放**：`allow_origins=["*"]` 且 `allow_credentials=True` 属开发期配置，
+   生产环境需收敛为具体域名（浏览器规范也不允许通配来源携带凭证）。
+4. **SQLite 的并发上限**：检查点 / 会话 / 记忆分四个库降低耦合，但仍是单文件库，
+   适合单机与中小流量；多副本部署需换 PostgreSQL 并重新设计会话隔离。
+5. **反思评估缺少标注集**：LLM-as-Judge 能打五维分，但没有人工标注数据来验证"分数是否可信"，
+   目前只在少量手工样例上做过一致性检查。
+6. **依赖未锁版本**：`requirements.txt` 用范围约束（`>=,<`），行为更依赖上游；
+   需要完全可复现构建时应补锁定文件。
+7. **`src` 是命名空间包**：缺少顶层 `src/__init__.py`，依赖 PEP 420 隐式命名空间，
+   在部分打包场景下会有歧义，建议补上。
+8. **前端由 AI 辅助生成**：界面代码为 AI 辅助产出，样式与交互细节未做系统性打磨。
 
 ---
 

@@ -1,0 +1,33 @@
+# Atlas · 多智能体学习工作台 · 一键部署
+#
+# 启动前必须先准备 .env（含 API Key，已被 .gitignore 排除）：
+#     cp .env.example .env      # 然后填入 DEEPSEEK_API_KEY
+#
+# 启动： docker compose up -d --build
+# 访问： http://localhost:8000/static/index.html
+# 文档： http://localhost:8000/docs
+#
+# 端口冲突提示：若本机 8000 已被其他程序占用，compose 会报
+# "port is already allocated"，把下面的 "8000:8000" 改成 "8100:8000" 即可。
+
+# 显式指定工程名：目录名是中文时，compose 自动推导工程名会得到空字符串并直接报错
+# （project name must not be empty），所以这里写死一个 ASCII 工程名。
+name: study-home
+
+services:
+  atlas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: study_home_app
+    ports:
+      # 本机 8000 常被其他服务占用（报 "port is already allocated"），因此默认映射到 8100。
+      # 想用 8000：在 shell 里 `APP_PORT=8000 docker compose up -d` 即可。
+      - "${APP_PORT:-8100}:8000"
+    # API Key 从 .env 注入，不进镜像、不进仓库
+    env_file:
+      - .env
+    volumes:
+      # 会话/记忆/检查点数据库 + 上传文件 + 导出文件，删容器不丢数据
+      - ./data:/app/data
+    restart: unless-stopped
