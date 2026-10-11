@@ -72,9 +72,10 @@ def build_mcp_connections(tavily_api_key: str) -> Dict[str, dict]:
     # Playwright 官方 MCP server，让 Agent 能操作浏览器
     connections["playwright"] = {
         "command": "npx",
-        "args": ["-y", "@playwright/mcp@latest"],
-        # @playwright/mcp 是 Playwright 官方的 MCP server
-        # @latest 确保用最新版
+        "args": ["-y", "@playwright/mcp@latest", "--headless"],
+        # --headless：无头模式，浏览器在后台运行不弹窗
+        # 不加这个参数时 Playwright 默认有头启动，每次搜索都会
+        # 在桌面弹出一个空白浏览器窗口，干扰使用
         "transport": "stdio",
         # 同样 stdio 模式
         # Playwright 不需要 API key，本地操作浏览器

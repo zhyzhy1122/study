@@ -97,6 +97,56 @@ def test_stream_tool_end_with_non_string_output_uses_placeholder(monkeypatch):
     assert out[0] == {"type": "tool_end", "tool": "code_review_expert", "content": "完成"}
 
 
+def test_stream_mutes_subagent_tokens_while_tool_running(monkeypatch):
+    """麦克风闸门：工具执行期间（子 Agent 直播）的 token 不推给前端，结束后恢复。"""
+    events = [
+        {"event": "on_tool_start", "name": "search_expert", "data": {"input": {"query": "q"}}, "run_id": "t1"},
+        chunk("子Agent中间产出不应外泄"),          # 工具在跑 → 掐掉
+        {"event": "on_tool_end", "name": "search_expert", "data": {"output": "ok"}, "run_id": "t1"},
+        chunk("这是总控的总结"),                    # 工具已结束 → 放行
+    ]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e for e in out if e["type"] == "token"]
+    assert tokens == [{"type": "token", "content": "这是总控的总结"}]
+    # 工具卡片不受影响
+    assert out[0]["type"] == "tool_start"
+    assert any(e["type"] == "tool_end" for e in out)
+
+
+def test_stream_mutes_until_all_parallel_tools_finish(monkeypatch):
+    """并行派工：两个工具只结束了一个时，子 Agent 直播仍要掐；全部结束才放行。"""
+    events = [
+        {"event": "on_tool_start", "name": "search_expert", "data": {"input": {"query": "q"}}, "run_id": "t1"},
+        {"event": "on_tool_start", "name": "code_review_expert", "data": {"input": {"code": "x"}}, "run_id": "t2"},
+        {"event": "on_tool_end", "name": "search_expert", "data": {"output": "ok"}, "run_id": "t1"},
+        chunk("另一个专家还在跑，这股流要掐"),     # t2 仍在执行 → 掐
+        {"event": "on_tool_end", "name": "code_review_expert", "data": {"output": "ok"}, "run_id": "t2"},
+        chunk("全部完成，总控开始整合输出"),        # 放行
+    ]
+
+    out = collect(monkeypatch, events)
+
+    tokens = [e for e in out if e["type"] == "token"]
+    assert tokens == [{"type": "token", "content": "全部完成，总控开始整合输出"}]
+
+
+def test_stream_tool_start_clears_stale_live_tools_on_new_model_turn(monkeypatch):
+    """兜底：工具异常/interrupt 导致 end 缺失时，总控新一轮推理（chat_model_start）要清空残留，
+    否则后续所有 token 会被永久吞掉。"""
+    events = [
+        {"event": "on_tool_start", "name": "clarify_expert", "data": {"input": {}}, "run_id": "t1"},
+        # 模拟 interrupt：没有 on_tool_end，直接进入总控新一轮推理
+        {"event": "on_chat_model_start", "name": "ChatOpenAI", "data": {}},
+        chunk("总控恢复后的输出"),
+    ]
+
+    out = collect(monkeypatch, events)
+
+    assert {"type": "token", "content": "总控恢复后的输出"} in out
+
+
 def test_stream_emits_thinking_phase_for_meaningful_chain_names(monkeypatch):
     events = [
         {"event": "on_chain_start", "name": "learning_path", "data": {}},

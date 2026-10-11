@@ -117,6 +117,10 @@ SUPERVISOR_SYSTEM_PROMPT = f"""你是 {settings.app_name} 的总控调度专家�
 - 规划路线时，可调用搜索工具（tavily_search）查找真实、权威的课程/文档/教程
 - 在路线的"学习资源推荐"部分附上这些资源的标题和网址（可直接访问的链接）
 - 不要在路线里编造课程/教程名称——搜索不到就如实说明"暂未搜索到，可自行搜索"
+## 并行派工规则
+当用户的请求包含两个及以上互不依赖的任务时（例如"审查这段代码，顺便搜一下 FastAPI 的最新版本"），
+你必须在同一条回复中一次性调用所有相关专家，不要一个一个排队调用。
+判断标准：后一个任务不需要前一个任务的输出结果，就是独立任务。
 """
 
 # ========== 同步总控缓存 ==========
@@ -351,6 +355,12 @@ async def astream_supervisor(user_input: str, thread_id: Optional[str] = None):
     _in_json = False     # 是否已进入"疑似 JSON"状态
     _JSON_MAX = 2048     # 缓冲上限：未闭合时超过此长度即放弃吞噬，按普通文本放行
 
+    # ---- 麦克风闸门状态（并行派工的前置保障）----
+    # 记录"正在执行中的工具 run_id"。集合非空 = 有子 Agent 在干活，
+    # 此期间所有 LLM 流式 token 都是子 Agent 的中间产出，不推给前端。
+    # 子 Agent 的最终产出会作为工具结果返回总控，由总控整合后统一输出。
+    _live_tools = set()
+
     def _find_json_object_end(s: str):
         """若 s 以（忽略前导空白后）一个花括号配平的 JSON 对象开始，返回该对象的结束下标；否则 None。
 
@@ -448,6 +458,21 @@ async def astream_supervisor(user_input: str, thread_id: Optional[str] = None):
         event_name = event.get("name", "")
         data = event.get("data", {})
 
+        # ---- 麦克风闸门（并行派工的前置保障）----
+        # 只要还有工具在执行，就说明当前 LLM 的流式输出来自"工具内部的子 Agent"，
+        # 而不是总控本人。子 Agent 的中间产出不能直接推给用户：
+        #   串行时靠时间错开掩盖，并行时多股流会绞在一起。
+        # 原则：子 Agent 干活的过程用 tool_start/tool_end 卡片展示，
+        #       用户屏幕上只出现总控最终整合后的回答。
+        # 兜底：on_chat_model_start（总控进入新一轮推理）时清空集合，
+        #       防止 interrupt / 工具异常导致 end 事件缺失、集合残留。
+        if event_type == "on_tool_start":
+            _live_tools.add(event.get("run_id"))
+        elif event_type == "on_tool_end" or event_type == "on_tool_error":
+            _live_tools.discard(event.get("run_id"))
+        elif event_type == "on_chat_model_start":
+            _live_tools.clear()
+
         if event_type == "on_tool_start":
             tool_name = event_name or "unknown_tool"
             tool_input = data.get("input", {})
@@ -502,6 +527,10 @@ async def astream_supervisor(user_input: str, thread_id: Optional[str] = None):
 
         # 推送文本，但先剥离内部 JSON（记忆更新 / 反思评分等），避免内部格式外泄
         if event_type == "on_chat_model_stream":
+            # 麦克风闸门：有工具在跑 = 这是子 Agent 内部 LLM 的直播，掐掉不推
+            # （子 Agent 的最终产出会作为工具结果返回总控，由总控整合后统一输出）
+            if _live_tools:
+                continue
             chunk = data.get("chunk")
             if chunk is None:
                 continue

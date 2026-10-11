@@ -172,19 +172,36 @@ class SearchAgent(BaseAgent):
 
         返回:
             搜索结果（整理后的回答）
+
+        降级设计（重要）：
+            MCP 链路是外部进程依赖（npx 拉起 Tavily/Playwright Server），
+            缓存损坏、Node 异常、网络问题都会让 init/调用抛错。
+            这里必须兜住：异常炸穿 astream_events 会把整个总控图带崩，
+            用户看到的就是"SSE 断流、未生成回答"。正确做法是把错误
+            作为工具结果返回，让总控继续推理并向用户解释。
         """
-        agent = await self._aget_agent()
-        # 异步懒加载 agent（首次会用 init_mcp_tools 初始化 MCP 工具）
+        try:
+            agent = await self._aget_agent()
+            # 异步懒加载 agent（首次会用 init_mcp_tools 初始化 MCP 工具）
 
-        messages = [
-            {"role": "user", "content": user_input}
-        ]
+            messages = [
+                {"role": "user", "content": user_input}
+            ]
 
-        result = await agent.ainvoke({"messages": messages})
-        # 异步调用 agent
+            result = await agent.ainvoke({"messages": messages})
+            # 异步调用 agent
 
-        final_answer = result["messages"][-1].content
-        return final_answer
+            final_answer = result["messages"][-1].content
+            return final_answer
+
+        except Exception as e:
+            # MCP 链路任何环节失败（server 启动失败 / Connection closed / 未配 Key）
+            err = f"{type(e).__name__}: {e}"
+            return (
+                "【搜索服务暂不可用】联网搜索工具连接失败：" + err[:200] + "。"
+                "请基于你已有的知识直接回答用户的问题，并说明：联网搜索功能当前不可用，稍后可重试。"
+                "不要编造搜索结果或虚构来源链接。"
+            )
 
     # ===== 同步版本（兜底，仅读缓存） =====
 

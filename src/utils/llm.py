@@ -69,6 +69,8 @@ def get_deepseek_llm(temperature: float = None) -> ChatOpenAI:
         # max_tokens：单次回答最大输出 token 数
         # 设大一点防止长回答中途截断（如学习路线）
         max_tokens=settings.deepseek_max_tokens,
+
+        parallel_tool_calls = True,
     )
     # ChatOpenAI 是 LangChain 对 OpenAI 格式模型的统一封装
     # 只要模型兼容 OpenAI 格式（DeepSeek、通义、智谱都兼容），就能用
