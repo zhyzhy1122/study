@@ -479,7 +479,18 @@ async function switchConversation(sid) {
     chatContainer.innerHTML = '';
     for (const m of data.messages) {
       if (m.role === 'user') {
-        appendMessage(escapeHtml(m.content).replace(/\n/g, '<br>'), 'user');
+        // 图片消息：先渲染图片（/uploads/文件名），再渲染文本
+        // 老消息没有 image_path 字段（undefined），按纯文本处理
+        let display = '';
+        let text = m.content || '';
+        if (m.image_path) {
+          const fname = m.image_path.split(/[\\/]/).pop();
+          display += `<img src="/uploads/${fname}" style="max-width:200px;border-radius:9px;display:block;margin-bottom:8px" onerror="this.style.display='none'" />`;
+          // 文本里旧版拼的"（附图片路径：...）"尾巴不再展示，图片已经单独渲染了
+          text = text.replace(/（附图片路径：[^）]*）/g, '').trim();
+        }
+        display += escapeHtml(text).replace(/\n/g, '<br>');
+        appendMessage(display, 'user');
       } else if (m.role === 'ai') {
         const { bubble } = appendMessage('', 'ai');
         renderFinal(bubble, m.content);

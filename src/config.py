@@ -7,11 +7,12 @@ src/config.py
 
 # ========== 导入部分 ==========
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 # 从 pydantic_settings 导入 BaseSettings 基类
 # 作用：BaseSettings 是 pydantic 官方提供的配置管理基类
 # 继承它的类会自动从环境变量和 .env 文件里读取配置值
 # 还会自动做类型检查（比如你定义了 str 类型，传了数字会报错）
+# SettingsConfigDict：pydantic v2 的新写法，替代旧的 class Config 内部类
 
 from pathlib import Path
 # 从 pathlib 导入 Path 类
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
 
     deepseek_model: str = "deepseek-v4-flash"
     # deepseek_model：使用的模型名称
-    # 默认值 "deepseek-chat" 是 DeepSeek 的主力对话模型
+    # 默认值 "deepseek-V4-flash" 是 DeepSeek 的主力对话模型
     # 以后想换模型（比如 deepseek-reasoner），改这里就行
 
     deepseek_temperature: float = 0.7
@@ -89,6 +90,14 @@ class Settings(BaseSettings):
     # True 的话会打印更多日志，方便排查问题
     # 开发时可以设 True，上线设 False
 
+    allowed_origins: str = "http://localhost:8000,http://localhost:8100"
+    # allowed_origins：允许跨域访问 API 的前端来源（逗号分隔）
+    # 对应 FastAPI CORS 中间件的 allow_origins
+    # 本地开发默认放行 localhost 的 8000（uvicorn 直跑）和 8100（docker 映射端口）
+    # 部署到服务器后，在 .env 里设成你的正式域名，例如：
+    #   ALLOWED_ORIGINS=https://your-domain.com
+    # 不要再写 "*"——星号等于对所有网站开放，会被白嫖调接口烧 API 费用
+
     @property
     def project_root(self) -> Path:
         # project_root：项目根目录路径（自动计算，不用配置）
@@ -103,19 +112,18 @@ class Settings(BaseSettings):
 
     # ========== 内部配置：模型加载 ==========
 
-    class Config:
-        # Config 是 Settings 类的内部类（嵌套类）
-        # 用来配置 BaseSettings 的行为
-        # 名字必须叫 Config，这是 pydantic 的约定
-
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=".env",
         # env_file：指定从哪个文件读取环境变量
         # 这里写 ".env"，表示从项目根目录下的 .env 文件读
         # pydantic-settings 会自动找到这个文件并加载里面的配置
 
-        env_file_encoding = "utf-8"
+        env_file_encoding="utf-8",
         # env_file_encoding：.env 文件的编码格式
         # 设成 utf-8，防止中文乱码
+    )
+    # 用 SettingsConfigDict 替代旧版 class Config 内部类
+    # 旧写法在 pydantic v2 已弃用，v3 会直接移除导致启动报错
 
 
 # ========== 全局单例 ==========

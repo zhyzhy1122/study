@@ -74,20 +74,28 @@ def test_api_health_check(api_client_no_lifespan):
     assert response.json() == {"status": "ok", "message": "路由正常工作"}
 
 
-def test_cors_allows_cross_origin_requests(api_client_no_lifespan):
-    """allow_origins=["*"] + allow_credentials=True 时，Starlette 会回显请求的 Origin。"""
-    response = api_client_no_lifespan.get("/", headers={"Origin": "http://localhost:5173"})
+def test_cors_allows_whitelisted_origin(api_client_no_lifespan):
+    """白名单内的来源（默认 localhost:8000/8100）正常放行，回显其 Origin。"""
+    response = api_client_no_lifespan.get("/", headers={"Origin": "http://localhost:8000"})
 
-    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["access-control-allow-origin"] == "http://localhost:8000"
     assert response.headers["access-control-allow-credentials"] == "true"
     # 简单请求不回 allow-methods，那是预检（OPTIONS）才有的头
+
+
+def test_cors_rejects_unknown_origin(api_client_no_lifespan):
+    """白名单外的来源不应被回显 allow-origin（浏览器将拦截响应）。"""
+    response = api_client_no_lifespan.get("/", headers={"Origin": "http://evil-site.com"})
+
+    assert "access-control-allow-origin" not in response.headers
+    # 收紧 CORS 的意义：任意第三方站点不再能跨域调用本 API
 
 
 def test_cors_preflight_is_answered(api_client_no_lifespan):
     response = api_client_no_lifespan.options(
         "/api/chat",
         headers={
-            "Origin": "http://localhost:5173",
+            "Origin": "http://localhost:8100",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "content-type",
         },

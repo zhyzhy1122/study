@@ -43,21 +43,10 @@ from src.memory.messages import add_message
 from src.memory.messages import get_recent_messages
 # 短期历史读取：自动导出时，若本轮没有生成内容，从这里取最近一条 AI 回答作为导出内容
 from src.agents.supervisor import astream_supervisor
-# ===== 诊断日志（临时，排查完删掉） =====
+
 import time as _time
-import traceback as _traceback
 from pathlib import Path as _Path
-
-_LOG_FILE = _Path(__file__).parent.parent.parent.parent / "data" / "debug_chat.log"
-
-def _log(msg: str):
-    """写一行诊断日志到文件（带时间戳）"""
-    try:
-        ts = _time.strftime("%H:%M:%S", _time.localtime())
-        with open(str(_LOG_FILE), "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {msg}\n")
-    except Exception:
-        pass  # 日志失败不能影响主流程
+# _time / _Path：导出文件命名和路径处理还在用，保留
 
 # ========== 常量 ==========
 
@@ -75,7 +64,6 @@ router = APIRouter(prefix="/api", tags=["chat"])
 @router.get("/health")
 async def health_check():
     """最简单的健康检查，确认路由能正常响应"""
-    _log("[health] 收到健康检查请求")
     return {"status": "ok", "message": "路由正常工作"}
 # prefix="/api"：这个路由下的所有接口都以 /api 开头
 # tags=["chat"]：在 Swagger 文档里归到 chat 分组，方便查看
@@ -137,15 +125,12 @@ async def chat(request: ChatRequest):
         4. 出错时返回 status=error，不抛异常给前端
     """
     try:
-        _log(f"=== 新请求开始: '{request.message[:30]}' ===")
-
         # ---- 会话 ID ----
         sid = request.session_id or uuid.uuid4().hex[:12]
 
         # ---- 构造用户输入 ----
         user_input = request.message
         # 纯文本部分
-        _log(f"[1/6] user_input 构造完成: {len(user_input)} 字")
 
         if request.image_path:
             # 如果有图片路径，把它拼进用户输入里
@@ -154,41 +139,27 @@ async def chat(request: ChatRequest):
             user_input += f"\n\n（附图片路径：{request.image_path}）"
 
         # ---- ① 存用户消息到短期历史（按会话隔离） ----
-        _log("[2/6] 开始 add_message(user) ...")
+        # 存消息失败不影响主流程，静默继续
         try:
             await add_message(sid, "user", user_input)
-            _log("[2/6] add_message(user) 完成")
-        except Exception as e:
-            # 存消息失败不影响主流程，打日志继续
-            _log(f"[2/6] ❌ add_message(user) 失败: {e}")
-            _log(_traceback.format_exc())
+        except Exception:
+            pass
 
         # ---- ② 过重写器补全（按会话取历史） ----
-        _log("[3/6] 开始 rewrite_input ...")
         rewritten_input = await rewrite_input(sid, user_input)
-        _log(f"[3/6] rewrite_input 完成，结果: '{rewritten_input[:50]}...'")
         # rewrite_input 内部已有异常兜底（失败返回原输入），外层不用再包
 
         # ---- ③ 调总控（用补全后的输入） ----
-        _log("[4/6] 开始 arun_supervisor ...")
         answer = await arun_supervisor(rewritten_input)
-        _log("[4/6] arun_supervisor 返回")
         # 走完整的 Agent 链路：总控 → 路由到子 Agent → 工具调用 → 反思 → 返回
         # 这一步是整个后端的核心，所有智能都在这里面
         answer = str(answer or "")
-        _log(f"[4/6] answer 转字符串完成，共 {len(answer)} 字")
 
         # ---- ④ 存AI回答到短期历史（按会话隔离） ----
-        _log("[5/6] 开始 add_message(ai) ...")
         try:
             await add_message(sid, "ai", answer)
-            _log("[5/6] add_message(ai) 完成")
-        except Exception as e:
-            # 存消息失败不影响主流程，打日志继续
-            _log(f"[5/6] ❌ add_message(ai) 失败: {e}")
-            _log(_traceback.format_exc())
-
-        _log("[6/6] 准备返回响应")
+        except Exception:
+            pass
 
         # ---- 空回答兜底：避免前端静默空白 ----
         if not answer.strip():
@@ -211,8 +182,6 @@ async def chat(request: ChatRequest):
         import traceback
         traceback.print_exc()
         # 控制台打完整堆栈，方便调试
-        _log(f"❌ chat() 异常: {e}")
-        _log(traceback.format_exc())
 
         return ChatResponse(
             reply="",
@@ -267,7 +236,7 @@ async def chat_stream(request: ChatRequest):
             try:
                 await _init_conv_db()
                 await _ensure_session(sid, title)
-                await _save_conv_message(sid, "user", request.message)
+                await _save_conv_message(sid, "user", request.message, request.image_path or "")
             except Exception:
                 pass
 
@@ -458,9 +427,17 @@ async def _init_conv_db():
                 session_id TEXT NOT NULL,
                 role       TEXT NOT NULL,
                 content    TEXT NOT NULL,
+                image_path TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             )
         """)
+        # 迁移：旧表没有 image_path 列，尝试添加（已有则忽略）
+        try:
+            await db.execute(
+                "ALTER TABLE conversation_messages ADD COLUMN image_path TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass  # 列已存在，忽略
         await db.commit()
 
 async def _ensure_session(session_id: str, title: str) -> str:
@@ -485,13 +462,13 @@ async def _ensure_session(session_id: str, title: str) -> str:
             await db.commit()
     return session_id
 
-async def _save_conv_message(session_id: str, role: str, content: str):
-    """存一条对话记录到 conversations.db"""
+async def _save_conv_message(session_id: str, role: str, content: str, image_path: str = ""):
+    """存一条对话记录到 conversations.db（image_path：用户消息附带的图片路径，AI 消息为空）"""
     now = datetime.datetime.now().isoformat()
     async with aiosqlite.connect(str(_CONV_DB_PATH)) as db:
         await db.execute(
-            "INSERT INTO conversation_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (session_id, role, content, now),
+            "INSERT INTO conversation_messages (session_id, role, content, image_path, created_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, role, content, image_path, now),
         )
         await db.execute(
             "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
@@ -537,11 +514,11 @@ async def list_conversations():
 
 @router.get("/conversations/{session_id}")
 async def get_conversation(session_id: str):
-    """获取某个对话的全部消息"""
+    """获取某个对话的全部消息（含用户消息附带的图片路径）"""
     await _init_conv_db()
     async with aiosqlite.connect(str(_CONV_DB_PATH)) as db:
         cursor = await db.execute(
-            """SELECT role, content, created_at
+            """SELECT role, content, image_path, created_at
                FROM conversation_messages
                WHERE session_id = ? ORDER BY id ASC""",
             (session_id,),
@@ -550,7 +527,7 @@ async def get_conversation(session_id: str):
         return {
             "session_id": session_id,
             "messages": [
-                {"role": r[0], "content": r[1], "created_at": r[2]}
+                {"role": r[0], "content": r[1], "image_path": r[2], "created_at": r[3]}
                 for r in rows
             ],
         }

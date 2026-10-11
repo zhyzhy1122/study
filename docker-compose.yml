@@ -4,11 +4,11 @@
 #     cp .env.example .env      # 然后填入 DEEPSEEK_API_KEY
 #
 # 启动： docker compose up -d --build
-# 访问： http://localhost:8000/static/index.html
-# 文档： http://localhost:8000/docs
+# 访问： http://localhost:8100/static/index.html
+# 文档： http://localhost:8100/docs
 #
-# 端口冲突提示：若本机 8000 已被其他程序占用，compose 会报
-# "port is already allocated"，把下面的 "8000:8000" 改成 "8100:8000" 即可。
+# 端口说明：默认映射到宿主机 8100（避开本机 8000 常被其他服务占用）。
+# 想用 8000：启动时加环境变量，即 `APP_PORT=8000 docker compose up -d`。
 
 # 显式指定工程名：目录名是中文时，compose 自动推导工程名会得到空字符串并直接报错
 # （project name must not be empty），所以这里写死一个 ASCII 工程名。

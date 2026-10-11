@@ -33,6 +33,9 @@ from pathlib import Path
 from src.api.deps import lifespan
 # lifespan：应用生命周期（启动初始化、关闭清理）
 
+from src.config import settings
+# 全局配置：CORS 允许的前端来源从这里读（ALLOWED_ORIGINS）
+
 from src.api.routes.chat import router as chat_router
 # chat 路由：/api/chat 接口
 # 重命名为 chat_router，避免和将来其他 router 重名
@@ -82,8 +85,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    # 允许所有来源（开发阶段方便，生产环境要收紧）
+    allow_origins=[
+        origin.strip()
+        for origin in settings.allowed_origins.split(",")
+        if origin.strip()
+    ],
+    # 允许的来源从配置读（默认本地 8000/8100），生产环境在 .env 里设成正式域名
+    # 不能用 "*"：等于对所有网站开放，公网上会被任意站点白嫖调接口
     allow_credentials=True,
     # 允许携带 cookie
     allow_methods=["*"],
@@ -125,6 +133,11 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 # 把 frontend 目录挂载到 /static 路径
 # 访问 http://localhost:8000/static/index.html 就能拿到前端页面
 # 先挂上，P2 做前端页面时直接用
+
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+# 把 data/uploads 挂载到 /uploads 路径
+# 用途：会话恢复时，历史消息里的图片要能通过 /uploads/文件名 访问到
+# 文件名是 uuid 随机生成 + 白名单后缀（见 chat.py upload_image），无路径穿越风险
 
 # ========== 根路径健康检查 ==========
 
